@@ -6,7 +6,7 @@
 Multicast among containers on different hosts made easy.
 
 Usage:
-  shoutdctl start <swarm_url> [--join=<router_ip>]
+  shoutdctl start <advertise_address> [--peer-addresses=<peer_addresses>]
   shoutdctl stop
   shoutdctl (-h | --help)
   shoutdctl (-v | --version)
@@ -27,11 +27,11 @@ if __name__ == '__main__':
     args = docopt(__doc__, version='shoutdctl 0.1.0')
 
     if args['start']:
-        if args.get('--join'):
-            params = '%s --join=%s' % (args['<swarm_url>'], args['--join'])
+        if args.get('--peer-addresses'):
+            params = '%s --peer-addresses=%s' % (args['<advertise_address>'], args['--peer-addresses'])
         else:
-            params = args['<swarm_url>']
-        run('docker run -d --name=shoutd --network=host -p 7788 -v /usr/lib/docker/plugins shoutd %s' % params)
+            params = args['<advertise_address>']
+        run('docker run -d --name=shoutd --network=host -p 7788 -p 7789 -v /usr/lib/docker/plugins shoutd %s' % params)
     else:
         print('Stoping...')
         run('docker stop shoutd')

@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+from raftkit import RaftUDPAgent
 from pyroute2 import IPRoute, NetNS, netns
 import netifaces
-from docker import Client as Swarm
 import requests
 import asyncio
 from urllib.parse import urlparse, parse_qsl
 import json
 import hashlib
-import subprocess
+import time
 import os
 import re
 import traceback
@@ -27,12 +27,13 @@ length_regex = re.compile(r'Content-Length: ([0-9]+)\r\n', re.IGNORECASE)
 
 class HttpRequest(object):
     def __init__(self, method, url, headers, payload=None):
+        print(100, method, url, headers, payload)
         self.method = method
         p = urlparse(url)
         self.path = p.path
         self.params = dict(parse_qsl(p.query))
         self.headers = headers
-        if payload is not None:
+        if payload:
             self.payload = json.loads(payload.decode('utf-8'))
         else:
             self.payload = {}
@@ -73,14 +74,13 @@ class HttpResponse(object):
 
 
 class ShoutD(object):
-    def __init__(self, swarm_url, router_ip=None, loop=None):
+    def __init__(self, advertise_address, peer_addresses=None, loop=None):
         if loop:
             self._loop = loop
         else:
             self._loop = asyncio.get_event_loop()
-        self._swarm_url = swarm_url
-        self._router_ip = router_ip
-        self._initialized = False
+        self._local_address = advertise_address.split(':')[0]
+        self._raft = RaftUDPAgent(advertise_address, peer_addresses=peer_addresses, event_loop=self._loop)
         self._routes = {}
 
         self._r('/Plugin.Activate', 'POST', self._handshake)
@@ -96,72 +96,22 @@ class ShoutD(object):
         self._r('/NetworkDriver.DiscoverDelete', 'POST', self._delete_discovery)
 
         self._r('/actions/delete-network', 'POST', self._do_delete_network)
-        self._r('/actions/replace-router', 'POST', self._handle_usurping)
 
     def _r(self, path, method, handler):
         if not self._routes.get(path):
             self._routes[path] = {}
         self._routes[path][method] = handler
 
-    def _handle_usurping(self, request, response):
-        if not self._router_ip:
-            response.status = 403
+    @property
+    def _peers(self):
+        return [v.split(':')[0] for v in self._raft.peer_addresses]
 
-        return {}
-
-    def _lazy_initialize(self):
-        if self._initialized:
-            return
-        logger.debug('initializing')
-        swarm = Swarm(base_url=self._swarm_url)
-        info = swarm.info()
-        # Docker API is disgusting...EWWWW! (docker/swarm issue#1214)
-        system_status = info['SystemStatus']
-        skip = 0
-        for item in system_status:
-            skip += 1
-            if item[0] == 'Nodes':
-                break
-        nodes = [n[1] for n in system_status[skip:] if n[0].strip(' ')[0] != '└']
-        self._nodes = [n.split(':')[0] for n in nodes]
-        logger.info('nodes', nodes=self._nodes)
-
-        local_addresses = []
-        for ifname in netifaces.interfaces():
-            addresses = netifaces.ifaddresses(ifname)
-            if addresses.get(netifaces.AF_INET):
-                local_addresses.append(addresses[netifaces.AF_INET][0]['addr'])
-
-        self._local_address = ''
-        for addr in local_addresses:
-            if addr in self._nodes:
-                self._local_address = addr
-                logger.info('local', address=self._local_address)
-                break
-        if not self._local_address:
-            raise Exception('no_local_address_found')
-        self._peers = [n for n in self._nodes if n != self._local_address]
-        logger.info('peers', peers=self._peers)
-
-        # double check
-        if not self._router_ip:
-            for peer in self._peers:
-                try:
-                    endpoint = 'http://%s:%d/actions/replace-router' % (peer, SHOUTD_PORT)
-                    result = requests.post(endpoint, json={}, timeout=3)
-                    if result.status_code == 403:
-                        self._router_ip = peer
-                        break
-                except Exception as e:
-                    logger.debug('unreachable', exception=e)
-
-        if not self._router_ip:
-            logger.info('role', role='router')
+    @property
+    def _relay_ip(self):
+        if self._raft.leader_address is not None:
+            return self._raft.leader_address.split(':')[0]
         else:
-            logger.info('role', role='endpoint', router=self._router_ip)
-
-        logger.debug('initialized')
-        self._initialized = True
+            return None
 
     @staticmethod
     def install_plugin():
@@ -185,7 +135,7 @@ class ShoutD(object):
             try:
                 os.remove(spec_path)
             except Exception as e:
-                logger.warning('unexpected', exception=e)
+                logger.error('unexpected', exception=e)
 
     async def _parse_request(self, reader):
         header_str = ''
@@ -200,12 +150,12 @@ class ShoutD(object):
         if match:
             length = int(match.group(1))
             while len(payload) < length:
-                payload += await reader.read(1500)
+                payload += await reader.read(2048)
 
         lines = header_str.split('\r\n')[:-1]
         method, url, _version = lines[0].split(' ')
         headers = lines[1:]
-        return HttpRequest(method, url, headers, payload)
+        return HttpRequest(method, url, headers, payload=payload)
 
     async def _handle_request(self, reader, writer):
         header_str = ''
@@ -272,7 +222,7 @@ class ShoutD(object):
         ns.link('set', index=vxlan, mtu=1500)
         ns.link('set', index=vxlan, state='up')
         bridge = ns.link_lookup(ifname='shoutbr0')[0]
-        ns.link('set', index=vxlan, router=bridge)
+        ns.link('set', index=vxlan, master=bridge)
 
         ip.close()
         ns.close()
@@ -283,17 +233,17 @@ class ShoutD(object):
 
         ns.link('add', ifname='shoutbr0', kind='bridge')
         bridge = ns.link_lookup(ifname='shoutbr0')[0]
-        # The IPLinkRequest way (svinota/pyroute2 issues#201) does not work
-        # and the NSPopen way either.
-        subprocess.Popen(('ip netns exec %s brctl stp shoutbr0 on' % namespace).split(' '))
         ns.link('set', index=bridge, mtu=1450)
         ns.link('set', index=bridge, state='up')
 
-        if not self._router_ip:
+        if self._raft.is_leader:
             for peer in self._peers:
                 self._create_tunnel(namespace, peer)
         else:
-            self._create_tunnel(namespace, self._router_ip)
+            while self._relay_ip is None:
+                logger.warning('waiting')
+                time.sleep(0.5)
+            self._create_tunnel(namespace, self._relay_ip)
 
         ip.close()
         ns.close()
@@ -366,7 +316,7 @@ class ShoutD(object):
         ns = NetNS(namespace)
         ns.link('set', index=veth0, state='up')
         bridge = ns.link_lookup(ifname='shoutbr0')[0]
-        ns.link('set', index=veth0, router=bridge)
+        ns.link('set', index=veth0, master=bridge)
 
         ip.close()
         ns.close()
@@ -427,18 +377,21 @@ class ShoutD(object):
         return {}
 
     def run_forever(self):
-        self._lazy_initialize()
-
         ShoutD.install_plugin()
-        http_coro = asyncio.start_server(self._handle_connection, host='0.0.0.0', port=SHOUTD_PORT, loop=self._loop)
-        tasks = [
-            asyncio.ensure_future(http_coro, loop=self._loop)
-        ]
+        plugin_coro = asyncio.start_server(self._handle_connection, host='0.0.0.0', port=SHOUTD_PORT, loop=self._loop)
+        tasks = asyncio.gather(
+            asyncio.ensure_future(plugin_coro, loop=self._loop),
+            *self._raft.tasks()
+        )
         try:
             logger.info('listening.starting')
-            self._loop.run_until_complete(asyncio.wait(tasks))
-            self._loop.run_forever()
+            self._loop.run_until_complete(tasks)
         except KeyboardInterrupt:
+            self._raft.farewell()
+            tasks.cancel()
             logger.info('listening.stopping')
-            self._loop.close()
+            self._loop.run_forever()
+            tasks.exception()
+        finally:
             ShoutD.uninstall_plugin()
+            self._loop.close()
