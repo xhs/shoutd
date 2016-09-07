@@ -3,8 +3,6 @@
 
 """shoutd
 
-Multicast among containers on different hosts made easy.
-
 Usage:
   shoutd <swarm_manager_endpoint> [--join=<router_ip>]
   shoutd (-h | --help)

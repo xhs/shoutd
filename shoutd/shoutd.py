@@ -442,10 +442,3 @@ class ShoutD(object):
             logger.info('listening.stopping')
             self._loop.close()
             ShoutD.uninstall_plugin()
-
-if __name__ == '__main__':
-    import logging
-    logging.basicConfig(level=logging.DEBUG)
-
-    app = ShoutD('tcp://192.168.10.10:4000')
-    app.run_forever()
