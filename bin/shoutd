@@ -1,0 +1,28 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""shoutd
+
+Multicast among containers on different hosts made easy.
+
+Usage:
+  shoutd <swarm_manager_endpoint> [--join=<router_ip>]
+  shoutd (-h | --help)
+  shoutd (-v | --version)
+
+Options:
+  -h --help             Show this screen.
+  -v --version          Show version.
+  --join=<router_ip>    Shoutd router IP address
+"""
+from docopt import docopt
+from shoutd import ShoutD
+
+if __name__ == '__main__':
+    import logging
+    logging.basicConfig(level=logging.DEBUG)
+
+    args = docopt(__doc__, version='shoutd 0.1.0')
+
+    app = ShoutD(args['<swarm_manager_endpoint>'], router_ip=args.get('--join'))
+    app.run_forever()
