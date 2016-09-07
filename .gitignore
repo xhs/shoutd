@@ -1,3 +1,6 @@
 .DS_Store/
 NOTES.txt
 tests/
+build/
+dist/
+*.egg-info/

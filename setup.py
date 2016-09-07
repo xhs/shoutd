@@ -12,7 +12,7 @@ setup(
     url='https://github.com/xhs/shoutd',
     packages=['shoutd'],
     scripts=['bin/shoutd', 'bin/shoutdctl'],
-    install_requires=['structlog', 'pyroute2', 'docopt'],
+    install_requires=['structlog', 'pyroute2', 'docopt', 'raftkit', 'requests'],
     classifiers=[
         'Programming Language :: Python :: 3'
     ]
