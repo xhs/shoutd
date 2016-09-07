@@ -3,7 +3,6 @@
 
 from raftkit import RaftUDPAgent
 from pyroute2 import IPRoute, NetNS, netns
-import netifaces
 import requests
 import asyncio
 from urllib.parse import urlparse, parse_qsl
