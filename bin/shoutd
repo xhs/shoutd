@@ -20,7 +20,7 @@ if __name__ == '__main__':
     import logging
     logging.basicConfig(level=logging.INFO)
 
-    args = docopt(__doc__, version='shoutd 0.1.0')
+    args = docopt(__doc__, version='shoutd 0.1.1')
 
     app = ShoutD(args['<advertise_address>'], peer_addresses=args.get('--peer-addresses'))
     app.run_forever()
