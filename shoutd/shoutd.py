@@ -120,7 +120,7 @@ class ShoutD(object):
                 os.remove(SHOUTD_PLUGIN_DIR)
             except FileNotFoundError:
                 pass
-            os.mkdir(SHOUTD_PLUGIN_DIR)
+            os.makedirs(SHOUTD_PLUGIN_DIR, exist_ok=True)
 
         spec_path = os.path.join(SHOUTD_PLUGIN_DIR, SHOUTD_SPEC_FILE)
         with open(spec_path, 'w+b') as f:

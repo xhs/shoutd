@@ -10,7 +10,7 @@ ADD . /code
 WORKDIR /code
 RUN python3 setup.py install
 
-VOLUME ["/usr/lib/docker/plugins"]
+VOLUME ["/usr/lib"]
 EXPOSE 7788
 EXPOSE 7789
 
