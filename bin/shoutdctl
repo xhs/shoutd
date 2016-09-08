@@ -31,7 +31,7 @@ if __name__ == '__main__':
             params = '%s --peer-addresses=%s' % (args['<advertise_address>'], args['--peer-addresses'])
         else:
             params = args['<advertise_address>']
-        run('docker run -d --name=shoutd --network=host --privileged=true -v /usr/lib/docker/plugins shoutd %s' % params)
+        run('docker run -d --name=shoutd --network=host --privileged=true -v /usr/lib/docker/plugins darkkitchen/shoutd %s' % params)
     else:
         print('Stoping...')
         run('docker stop shoutd')
