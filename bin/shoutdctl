@@ -14,7 +14,6 @@ Usage:
 Options:
   -h --help             Show this screen.
   -v --version          Show version.
-  --join=<router_ip>    Shoutd router IP address
 """
 from docopt import docopt
 import subprocess  # Good old buddy <3
