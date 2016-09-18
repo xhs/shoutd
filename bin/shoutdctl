@@ -3,8 +3,6 @@
 
 """shoutdctl
 
-Multicast among containers on different hosts made easy.
-
 Usage:
   shoutdctl start <advertise_address> [--peer-addresses=<peer_addresses>]
   shoutdctl stop
